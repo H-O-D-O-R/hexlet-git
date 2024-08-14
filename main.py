@@ -1,13 +1,14 @@
 import telebot
 from telebot import types
 import sqlite3
+import json
 
 bot = telebot.TeleBot('6554881247:AAE0GVjHxGdwjwmCWeDYkhT_r-EweXhhtgU')
 
 # ВЫПОЛНЕНИЕ КОМАНДЫ
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.send_message(message.chat.id, 'Привет!')
+    bot.send_message(message.chat.id, f'Привет!')
     chose_table(message)
 
 
@@ -264,6 +265,44 @@ def correct_category_menu(message, number_of_table, number_of_guest):
         bot.send_message(message.chat.id, 'Товар не найден')
         return chose_order(message, number_of_table, number_of_guest)
 
+#ДОБАВИТЬ ТОВАР В ЗАКАЗ
+def add_good_to_order(message, number_of_table, number_of_guest, good, variant=''):
+    conn = sqlite3.connect('DNK.db')
+    cur = conn.cursor()
+
+    cur.execute(f"SELECT * from waiters where id_chat = '{message.chat.id}'")
+    waiter = cur.fetchall()[0]
+
+    if waiter[3] and number_of_table in waiter[3].split(', '):
+        data = json.loads( waiter[4] )
+    else:
+        data = {'order': {number_of_table: {number_of_guest: {}}}}
+
+        active_tables = waiter[3]
+
+        if len(active_tables):
+            active_tables += ', ' + number_of_table
+        else:
+            active_tables += number_of_table
+
+        cur.execute(f'''UPDATE waiters SET active_tables = '{active_tables}' where id_chat = '{message.chat.id}' ''')
+        conn.commit()
+    data_of_guest = data['order'][number_of_table][number_of_guest]
+    if variant:
+        data_of_guest[good[1] + '_' + variant] = data_of_guest.get(good[1] + '_' + variant, {'quantity': 0, 'comment': variant})
+        data_of_guest[good[1] + '_' + variant]['quantity'] += 1
+    else:
+        data_of_guest[good[1]] = data_of_guest.get(good[1], {'quantity': 0, 'comment': variant})
+        data_of_guest[good[1]]['quantity'] += 1
+     
+    data = json.dumps(data, ensure_ascii=False)
+
+    cur.execute(f'''UPDATE waiters SET json_draft = '{data}' where id_chat = '{message.chat.id}' ''')
+    conn.commit()
+
+    cur.close()
+    conn.close()  
+
 
 #Созданиие шаблона товаров выбранной категории
 def make_markup_goods(categories, number_of_guest):
@@ -318,55 +357,81 @@ def correct_goods(message, number_of_table, number_of_guest, categories):
         cur = conn.cursor()
 
         cur.execute(f"SELECT * from goods where name = '{text}'")
-        goods = cur.fetchall()
+        good = cur.fetchall()
 
         cur.close()
         conn.close()
         
-        if goods:
-            bot.send_message(message.chat.id, 'Товар найден')
-            return chose_goods(message, number_of_table, number_of_guest, categories)
+        if good:
+            good = good[0]
+            bot.send_message(message.chat.id, f'Товар найден\n{good}')
+            if int(good[7]):
+                return chose_variative_good(message, number_of_table, number_of_guest, good)
+            else:
+                add_good_to_order(message, number_of_table, number_of_guest, good) 
+                return chose_goods(message, number_of_table, number_of_guest, categories)
         else:
             bot.send_message(message.chat.id, f'Товар не найден')
             return chose_order(message, number_of_table, number_of_guest)
 
+#Создание шаблона вариативных товаров
+def make_markup_variative_goods(good):
+    markup = types.ReplyKeyboardMarkup()
+
+    btns = [[]]
+    for variant in good[8].split(', '):
+        if len(btns[-1]) == 2:
+            btns.append([])
+        btns[-1].append( types.KeyboardButton(variant) )
+    
+    for row in btns:
+        markup.row( *row )
+    
+    markup.row( 'Назад' )
+
+    return markup         
+#Выбор вариативных блюд
+def chose_variative_good(message, number_of_table, number_of_guest, good):
+    bot.send_message(message.chat.id, 'Выбери вариацию', reply_markup=make_markup_variative_goods(good))
+    bot.register_next_step_handler(message, correct_variative_good, number_of_table, number_of_guest, good)
+#Обработка выбранной кнопки
+def correct_variative_good(message, number_of_table, number_of_guest, good):
+    text = message.text
+
+    if text in good[8].split(', '):
+        add_good_to_order(message, number_of_table, number_of_guest, good, text)
+    elif text != 'Назад':
+        bot.send_message(message.chat.id, 'вариация не найдена')
+    
+    return chose_goods(message, number_of_table, number_of_guest, good[2])
+
+
 #ПОЛУЧЕНИЕ ФОТО
-@bot.message_handler(content_types=['photo'])
-def set_photo(message):
-    bot.send_message(message.chat.id, 'Фото установлено!')
+# @bot.message_handler(content_types=['photo'])
+# def set_photo(message):
+#     bot.send_message(message.chat.id, 'Фото установлено!')
 
 #СООБЩЕНИЕ С КНОПКАМИ
 @bot.message_handler(commands=['list_of_dishes'])
 def func(message):
-    bot.send_message(message.chat.id, 'СПИСОК БЛЮД:')
-    bot.send_message(message.chat.id, 'блюдо1', reply_markup=make_buttons())
+    bot.send_message(message.chat.id, 'гость 1 за столом 3', reply_markup=make_buttons_3())
 
-#КНОПКИ
-def make_buttons():
+#КНОПКИ_3
+def make_buttons_3():
     markup = types.InlineKeyboardMarkup()
-
-    #Создание каждой кнопки в новом ряду
-    #markup.add(types.InlineKeyboardButton('1', callback_data='1'))
-    #markup.add(types.InlineKeyboardButton('2', callback_data='2'))
-    #markup.add(types.InlineKeyboardButton('3', callback_data='3'))
-
-    #Создание ряда
-
-    btn1 = types.InlineKeyboardButton('состав', callback_data='compound')
-    markup.row(btn1)
-
-    btn2 = types.InlineKeyboardButton('комментарий', callback_data='comment')
-    btn3 = types.InlineKeyboardButton('удалить', callback_data='delete')
-    markup.row(btn2, btn3)
+    markup.row( types.InlineKeyboardButton('Хрустящие баклажаны с томатами, 3 шт', callback_data='add') )
+    markup.row( types.InlineKeyboardButton('Борщ с зерновых хлебом и смальцем, 2 шт', callback_data='add') )
+    markup.row( types.InlineKeyboardButton('Котлеты по-домашнему с пюре, 1 шт', callback_data='add') )
 
     return markup
-
 
 #СОЗДАНИИЕ ФУНКЦИИ ДЛЯ КНОПОК
 @bot.callback_query_handler(func=lambda callback: True)
 def callback_message(callback):
-    if callback.data == 'delete': #УДАЛИТЬ СООБЩЕНИЕ С КНОПКАМИ
-        bot.delete_message(callback.message.chat.id, callback.message.message_id)
+    if callback.data == 'add': #ДОБАВИТЬ ЕДИНИЦЦ ТОВАРА
+        pass
+    elif callback.data == 'reduce': #УБРАТЬ ЕДИНИЦУ ТОВАРА
+        pass
     elif callback.data == 'comment': #ОСТАВИТЬ КОММЕНТАРИЙ К БЛЮДУ
         bot.edit_message_text(callback.message.text + '\nСкоро здесь можно будет оставлять комментарий', callback.message.chat.id, callback.message.message_id, reply_markup=make_buttons())
     elif callback.data == 'compound': #ВЫВЕСТИ СОСТАВ БЛЮДА
