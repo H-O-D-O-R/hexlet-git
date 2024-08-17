@@ -8,7 +8,6 @@ bot = telebot.TeleBot('6554881247:AAE0GVjHxGdwjwmCWeDYkhT_r-EweXhhtgU')
 # ВЫПОЛНЕНИЕ КОМАНДЫ
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.send_message(message.chat.id, f'Привет!')
     chose_table(message)
 
 
@@ -54,7 +53,6 @@ def correct_table(message):
 
     if text.isdigit() and 0 < int(text) < 17:
         number_of_table = text
-        bot.send_message(message.chat.id, f'Вы выбрали стол № {number_of_table}')
         return chose_guest(message, number_of_table)
     elif text == 'Мои столы':
         bot.send_message(message.chat.id, 'Здесь будут написаны твои столы')
@@ -149,7 +147,7 @@ def correct_guest(message, number_of_table):
 
     if text.isdigit():
         number_of_guest = text
-        bot.send_message(message.chat.id, f'Вы выбрали гостя № {number_of_guest}')
+        # bot.send_message(message.chat.id, f'Вы выбрали гостя № {number_of_guest}')
         return chose_order(message, number_of_table, number_of_guest)
     elif text == 'Зал':
         return chose_table(message)
@@ -197,8 +195,6 @@ def correct_order(message, number_of_table, number_of_guest):
 
     if text == 'Меню':
         return chose_category_menu(message, number_of_table, number_of_guest)
-    elif text == 'Детское меню':
-        return chose_category_child_menu(message, number_of_table, number_of_guest)
     elif text == 'Зал':
         return chose_table(message)
     elif text == 'Мои столы':
@@ -273,20 +269,14 @@ def add_good_to_order(message, number_of_table, number_of_guest, good, variant='
     cur.execute(f"SELECT * from waiters where id_chat = '{message.chat.id}'")
     waiter = cur.fetchall()[0]
 
-    if waiter[3] and number_of_table in waiter[3].split(', '):
-        data = json.loads( waiter[4] )
+    if not waiter[4]:
+        data = {'order': {}}
     else:
-        data = {'order': {number_of_table: {number_of_guest: {}}}}
+        data = json.loads( waiter[4] )
+    
+    data['order'][number_of_table] = data['order'].get(number_of_table, {})
+    data['order'][number_of_table][number_of_guest] = data['order'][number_of_table].get(number_of_guest, {})
 
-        active_tables = waiter[3]
-
-        if len(active_tables):
-            active_tables += ', ' + number_of_table
-        else:
-            active_tables += number_of_table
-
-        cur.execute(f'''UPDATE waiters SET active_tables = '{active_tables}' where id_chat = '{message.chat.id}' ''')
-        conn.commit()
     data_of_guest = data['order'][number_of_table][number_of_guest]
     if variant:
         data_of_guest[good[1] + '_' + variant] = data_of_guest.get(good[1] + '_' + variant, {'quantity': 0, 'comment': variant})
@@ -301,8 +291,72 @@ def add_good_to_order(message, number_of_table, number_of_guest, good, variant='
     conn.commit()
 
     cur.close()
-    conn.close()  
+    conn.close()
 
+    display_order(message, number_of_table, number_of_guest)
+
+#Вывод заказа стола
+def display_order(message, number_of_table, number_of_guest):
+    bot.send_message(message.chat.id, f" {'-' * 60}\n{' ' * 25}СТОЛ {number_of_table}\n{'-'*60}")
+
+    conn = sqlite3.connect('DNK.db')
+    cur = conn.cursor()
+
+    cur.execute(f"SELECT json_detailed_order from moving_of_tables where active = '1' and number_of_table = '{number_of_table}'")
+    last_data_of_guests = cur.fetchall()
+
+    cur.execute(f"SELECT json_draft from waiters where id_chat = '{message.chat.id}'")
+    data = json.loads(cur.fetchall()[0][0])
+    new_data_of_guests = data['order'][number_of_table]
+
+    if last_data_of_guests:
+        last_data_of_guests = json.loads(last_data_of_guests[0], ensure_ascii=False)
+    else:
+        last_data_of_guests = {}
+    
+    guests = sorted( set( list(last_data_of_guests.keys()) + list(new_data_of_guests.keys()) ) - {number_of_guest}) + [number_of_guest]
+
+    
+
+    id_messages_of_guests = {}
+
+    for guest in guests:
+        bot.send_message(message.chat.id, f'{"-" * 60}\n{" " * 25}ГОСТЬ {guest}\n{"-" * 60}')
+
+        markup = make_buttons_for_good(False, number_of_table, guest)
+        for name, value in last_data_of_guests.get(guest, {}).items():
+            bot.send_message(message.chat.id, f"{name.split('_')[0]}, {value['quantity']} шт\n{value['comment']}", reply_markup=markup)
+        
+        markup = make_buttons_for_good(True, number_of_table, guest)
+        for name, value in new_data_of_guests.get(guest, {}).items():
+            bot.send_message(message.chat.id, f"🔄 {name.split('_')[0]}, {value['quantity']} шт\n{value['comment']}", reply_markup=markup)
+        
+    data['id_messages_of_guests'] = id_messages_of_guests
+    cur.execute(f''' UPDATE waiters SET json_draft = '{json.dumps(data, ensure_ascii=False)}' where id_chat = '{message.chat.id}' ''')
+    conn.commit()
+
+    cur.close()
+    conn.close()
+
+#Создание шаблона кнопок для товаров заказа
+def make_buttons_for_good(is_draft, number_of_table, guest):
+    markup = types.InlineKeyboardMarkup()
+
+    btn_add = types.InlineKeyboardButton('➕', callback_data=f"a_{number_of_table}_{guest}")    
+    btn_reduce = types.InlineKeyboardButton('➖', callback_data=f'r_{number_of_table}_{guest}')
+    btn_delete = types.InlineKeyboardButton('🗑', callback_data=f'd_{number_of_table}_{guest}')
+    btn_comment = types.InlineKeyboardButton('✏️', callback_data=f'cm_{number_of_table}_{guest}')
+    btn_compound = types.InlineKeyboardButton('📕', callback_data=f'c_{number_of_table}_{guest}')
+    btn_taken = types.InlineKeyboardButton('✅', callback_data=f't_{number_of_table}_{guest}')
+
+    if is_draft:
+        btns = [btn_add, btn_reduce, btn_delete, btn_comment, btn_compound]
+    else:
+        btns = [btn_add, btn_compound, btn_taken]
+
+    markup.row(*btns)
+
+    return markup
 
 #Созданиие шаблона товаров выбранной категории
 def make_markup_goods(categories, number_of_guest):
@@ -364,14 +418,14 @@ def correct_goods(message, number_of_table, number_of_guest, categories):
         
         if good:
             good = good[0]
-            bot.send_message(message.chat.id, f'Товар найден\n{good}')
+            # bot.send_message(message.chat.id, f'Товар найден\n{good}')
             if int(good[7]):
                 return chose_variative_good(message, number_of_table, number_of_guest, good)
             else:
                 add_good_to_order(message, number_of_table, number_of_guest, good) 
                 return chose_goods(message, number_of_table, number_of_guest, categories)
         else:
-            bot.send_message(message.chat.id, f'Товар не найден')
+            # bot.send_message(message.chat.id, f'Товар не найден')
             return chose_order(message, number_of_table, number_of_guest)
 
 #Создание шаблона вариативных товаров
@@ -400,8 +454,9 @@ def correct_variative_good(message, number_of_table, number_of_guest, good):
 
     if text in good[8].split(', '):
         add_good_to_order(message, number_of_table, number_of_guest, good, text)
-    elif text != 'Назад':
-        bot.send_message(message.chat.id, 'вариация не найдена')
+    # elif text != 'Назад':
+    #     pass
+    #     bot.send_message(message.chat.id, 'вариация не найдена')
     
     return chose_goods(message, number_of_table, number_of_guest, good[2])
 
@@ -411,31 +466,151 @@ def correct_variative_good(message, number_of_table, number_of_guest, good):
 # def set_photo(message):
 #     bot.send_message(message.chat.id, 'Фото установлено!')
 
-#СООБЩЕНИЕ С КНОПКАМИ
-@bot.message_handler(commands=['list_of_dishes'])
-def func(message):
-    bot.send_message(message.chat.id, 'гость 1 за столом 3', reply_markup=make_buttons_3())
-
-#КНОПКИ_3
-def make_buttons_3():
-    markup = types.InlineKeyboardMarkup()
-    markup.row( types.InlineKeyboardButton('Хрустящие баклажаны с томатами, 3 шт', callback_data='add') )
-    markup.row( types.InlineKeyboardButton('Борщ с зерновых хлебом и смальцем, 2 шт', callback_data='add') )
-    markup.row( types.InlineKeyboardButton('Котлеты по-домашнему с пюре, 1 шт', callback_data='add') )
-
-    return markup
-
 #СОЗДАНИИЕ ФУНКЦИИ ДЛЯ КНОПОК
 @bot.callback_query_handler(func=lambda callback: True)
 def callback_message(callback):
-    if callback.data == 'add': #ДОБАВИТЬ ЕДИНИЦЦ ТОВАРА
-        pass
-    elif callback.data == 'reduce': #УБРАТЬ ЕДИНИЦУ ТОВАРА
-        pass
-    elif callback.data == 'comment': #ОСТАВИТЬ КОММЕНТАРИЙ К БЛЮДУ
-        bot.edit_message_text(callback.message.text + '\nСкоро здесь можно будет оставлять комментарий', callback.message.chat.id, callback.message.message_id, reply_markup=make_buttons())
-    elif callback.data == 'compound': #ВЫВЕСТИ СОСТАВ БЛЮДА
-        bot.send_message(callback.message.chat.id, 'состав')
+    print(callback.data)
+    name = callback.message.text.split(',')[0]
 
+    if name.startswith('🔄'):
+        name = name[2:]
+
+    command, table, guest = callback.data.split('_')
+
+    if command == 'a': #ДОБАВИТЬ ЕДИНИЦУ ТОВАРА
+        conn = sqlite3.connect('DNK.db')
+        cur = conn.cursor()
+
+        cur.execute(f''' SELECT json_draft FROM waiters where id_chat = {callback.message.chat.id} ''')
+        draft = json.loads(cur.fetchall()[0][0])
+
+        cur.execute(f''' SELECT is_varitive FROM goods WHERE name = '{name}' ''')
+        is_varitive = cur.fetchall()[0][0]
+        
+        if is_varitive:
+            name = name + callback.message.text.split('\n')[1]
+        
+        draft['order'][table][guest][name]['quantity'] += 1
+
+        cur.execute(f''' UPDATE waiters SET json_draft = '{json.dumps(draft, ensure_ascii=False)}' WHERE id_chat = '{callback.message.chat.id}' ''')
+        conn.commit()
+
+        cur.close()
+        conn.close()
+
+        display_order(callback.message, table, guest)
+
+    elif command == 'r': #УБРАТЬ ЕДИНИЦУ ТОВАРА
+        conn = sqlite3.connect('DNK.db')
+        cur = conn.cursor()
+
+        cur.execute(f''' SELECT json_draft FROM waiters where id_chat = {callback.message.chat.id} ''')
+        draft = json.loads(cur.fetchall()[0][0])
+
+        cur.execute(f''' SELECT is_varitive FROM goods WHERE name = '{name}' ''')
+        is_varitive = cur.fetchall()[0][0]
+        
+        if is_varitive:
+            name = name + '_' + callback.message.text.split('\n')[1]
+        
+        draft['order'][table][guest][name]['quantity'] -= 1
+        if draft['order'][table][guest][name]['quantity'] == 0:
+            del draft['order'][table][guest][name]
+
+        cur.execute(f''' UPDATE waiters SET json_draft = '{json.dumps(draft, ensure_ascii=False)}' where id_chat = {callback.message.chat.id}  ''')
+        conn.commit()
+
+        cur.close()
+        conn.close()
+
+        display_order(callback.message, table, guest)
+
+    elif command == 'd': #УДАЛИТЬ ТОВАР ИЗ ЗАКАЗА
+        conn = sqlite3.connect('DNK.db')
+        cur = conn.cursor()
+
+        cur.execute(f''' SELECT json_draft FROM waiters where id_chat = {callback.message.chat.id} ''')
+        draft = json.loads(cur.fetchall()[0][0])
+
+        cur.execute(f''' SELECT is_varitive FROM goods WHERE name = '{name}' ''')
+        is_varitive = cur.fetchall()[0][0]
+        
+        if is_varitive:
+            name = name + '_' + callback.message.text.split('\n')[1]
+        
+        del draft['order'][table][guest][name]
+
+        cur.execute(f''' UPDATE waiters SET json_draft = '{json.dumps(draft, ensure_ascii=False)}' where id_chat = {callback.message.chat.id}  ''')
+        conn.commit()
+
+        cur.close()
+        conn.close()
+
+        display_order(callback.message, table, guest)
+
+    elif command == 'cm': #ОСТАВИТЬ КОММЕНТАРИЙ К БЛЮДУ
+        conn = sqlite3.connect('DNK.db')
+        cur = conn.cursor()
+
+        cur.execute(f''' SELECT is_varitive FROM goods WHERE name = '{name}' ''')
+        is_varitive = cur.fetchall()[0][0]
+
+        cur.close()
+        conn.close()
+        
+        if is_varitive:
+            name = name + callback.message.text.split('\n')[1]
+
+        def make_markup_for_comment():
+            markup = types.ReplyKeyboardMarkup()
+
+            btn_cancel = types.KeyboardButton('Отмена')
+
+            markup.row(btn_cancel)
+
+            return markup
+        def write_comment(message, name, table, guest):
+            bot.send_message(message.chat.id, 'Напиши комменатрий к {name} гостю {guest} за столом {table}', reply_markup=make_markup_for_comment())
+            bot.register_next_step_handler(message, correct_comment, name, table, guest)
+        def correct_comment(message, name, table, guest):
+            text = message.text
+
+            if text != 'Отмена':
+                conn = sqlite3.connect('DNK.db')
+                cur = conn.cursor()
+
+                cur.execute(f''' SELECT json_draft FROM waiters where id_chat = {message.chat.id} ''')
+                draft = json.loads(cur.fetchall()[0][0])
+                
+                draft['order'][table][guest][name]['comment'] += f'\n{text}'
+
+                cur.execute(f''' UPDATE waiters SET json_draft = '{json.dumps(draft, ensure_ascii=False)}' where id_chat = {message.chat.id}  ''')
+                conn.commit()
+
+                cur.close()
+                conn.close()
+
+                display_order(message, table, guest)
+            else:
+                chose_category_menu(message, table, guest)
+        
+        write_comment(callback.message, name, table, guest)
+
+    elif command == 'c': #ВЫВЕСТИ СОСТАВ БЛЮДА
+        conn = sqlite3.connect('DNK.db')
+        cur = conn.cursor()
+
+        cur.execute(f''' SELECT compound FROM goods WHERE name = '{name}' ''')
+        compound = cur.fetchall()[0][0]
+        
+        bot.send_message(callback.message.chat.id, f'Состав {name.split("_")[0]}:\n{compound}')
+
+        cur.close()
+        conn.close()
+
+        chose_guest(callback.message, table)
+
+    elif command == 't':
+        chose_guest(callback.message, table)
 
 bot.polling(non_stop=True)
