@@ -301,26 +301,25 @@ def display_order(message, number_of_table, number_of_guest):
 
     conn = sqlite3.connect('DNK.db')
     cur = conn.cursor()
-
-    cur.execute(f"SELECT json_detailed_order from moving_of_tables where active = '1' and number_of_table = '{number_of_table}'")
-    last_data_of_guests = cur.fetchall()
-
+    
     cur.execute(f"SELECT json_draft from waiters where id_chat = '{message.chat.id}'")
     data = json.loads(cur.fetchall()[0][0])
     new_data_of_guests = data['order'][number_of_table]
+
+    cur.execute(f"SELECT json_detailed_order from moving_of_tables where active = '1' and number_of_table = '{number_of_table}'")
+    last_data_of_guests = cur.fetchall()
 
     if last_data_of_guests:
         last_data_of_guests = json.loads(last_data_of_guests[0], ensure_ascii=False)
     else:
         last_data_of_guests = {}
-    
+
     guests = sorted( set( list(last_data_of_guests.keys()) + list(new_data_of_guests.keys()) ) - {number_of_guest}) + [number_of_guest]
 
-    
-
-    id_messages_of_guests = {}
-
     for guest in guests:
+        if not last_data_of_guests.get(guest, False) and not new_data_of_guests.get(guest, False):
+            continue
+
         bot.send_message(message.chat.id, f'{"-" * 60}\n{" " * 25}ГОСТЬ {guest}\n{"-" * 60}')
 
         markup = make_buttons_for_good(False, number_of_table, guest)
@@ -331,10 +330,6 @@ def display_order(message, number_of_table, number_of_guest):
         for name, value in new_data_of_guests.get(guest, {}).items():
             bot.send_message(message.chat.id, f"🔄 {name.split('_')[0]}, {value['quantity']} шт\n{value['comment']}", reply_markup=markup)
         
-    data['id_messages_of_guests'] = id_messages_of_guests
-    cur.execute(f''' UPDATE waiters SET json_draft = '{json.dumps(data, ensure_ascii=False)}' where id_chat = '{message.chat.id}' ''')
-    conn.commit()
-
     cur.close()
     conn.close()
 
@@ -469,10 +464,11 @@ def correct_variative_good(message, number_of_table, number_of_guest, good):
 #СОЗДАНИИЕ ФУНКЦИИ ДЛЯ КНОПОК
 @bot.callback_query_handler(func=lambda callback: True)
 def callback_message(callback):
-    print(callback.data)
     name = callback.message.text.split(',')[0]
 
+    is_draft = False
     if name.startswith('🔄'):
+        is_draft = True
         name = name[2:]
 
     command, table, guest = callback.data.split('_')
@@ -481,16 +477,20 @@ def callback_message(callback):
         conn = sqlite3.connect('DNK.db')
         cur = conn.cursor()
 
+        cur.execute(f''' SELECT is_varitive FROM goods WHERE name = '{name}' ''')
+        is_varitive = cur.fetchall()[0][0]
+                
+        if is_varitive:
+            name = name + '_' + callback.message.text.split('\n')[1]
+        
         cur.execute(f''' SELECT json_draft FROM waiters where id_chat = {callback.message.chat.id} ''')
         draft = json.loads(cur.fetchall()[0][0])
 
-        cur.execute(f''' SELECT is_varitive FROM goods WHERE name = '{name}' ''')
-        is_varitive = cur.fetchall()[0][0]
-        
-        if is_varitive:
-            name = name + callback.message.text.split('\n')[1]
-        
         draft['order'][table][guest][name]['quantity'] += 1
+
+        bot.edit_message_text(f"{'🔄 ' if is_draft else ''}{name.split('_')[0]}, {draft['order'][table][guest][name]['quantity']} шт\n{draft['order'][table][guest][name]['comment']}", 
+                                callback.message.chat.id, callback.message.message_id, 
+                                reply_markup=make_buttons_for_good(True, table, guest))
 
         cur.execute(f''' UPDATE waiters SET json_draft = '{json.dumps(draft, ensure_ascii=False)}' WHERE id_chat = '{callback.message.chat.id}' ''')
         conn.commit()
@@ -498,7 +498,7 @@ def callback_message(callback):
         cur.close()
         conn.close()
 
-        display_order(callback.message, table, guest)
+        # chose_category_menu(callback.message, table, guest)
 
     elif command == 'r': #УБРАТЬ ЕДИНИЦУ ТОВАРА
         conn = sqlite3.connect('DNK.db')
@@ -513,17 +513,21 @@ def callback_message(callback):
         if is_varitive:
             name = name + '_' + callback.message.text.split('\n')[1]
         
-        draft['order'][table][guest][name]['quantity'] -= 1
-        if draft['order'][table][guest][name]['quantity'] == 0:
+        if draft['order'][table][guest][name]['quantity'] == 1:
             del draft['order'][table][guest][name]
+            bot.delete_message(callback.message.chat.id, callback.message.message_id)
+        else:
+            draft['order'][table][guest][name]['quantity'] -= 1
+            bot.edit_message_text(f"{'🔄 ' if is_draft else ''}{name.split('_')[0]}, {draft['order'][table][guest][name]['quantity']} шт\n{draft['order'][table][guest][name]['comment']}", 
+                        callback.message.chat.id, callback.message.message_id, 
+                        reply_markup=make_buttons_for_good(True, table, guest))
+
 
         cur.execute(f''' UPDATE waiters SET json_draft = '{json.dumps(draft, ensure_ascii=False)}' where id_chat = {callback.message.chat.id}  ''')
         conn.commit()
 
         cur.close()
         conn.close()
-
-        display_order(callback.message, table, guest)
 
     elif command == 'd': #УДАЛИТЬ ТОВАР ИЗ ЗАКАЗА
         conn = sqlite3.connect('DNK.db')
@@ -539,14 +543,13 @@ def callback_message(callback):
             name = name + '_' + callback.message.text.split('\n')[1]
         
         del draft['order'][table][guest][name]
+        bot.delete_message(callback.message.chat.id, callback.message.message_id)
 
         cur.execute(f''' UPDATE waiters SET json_draft = '{json.dumps(draft, ensure_ascii=False)}' where id_chat = {callback.message.chat.id}  ''')
         conn.commit()
 
         cur.close()
         conn.close()
-
-        display_order(callback.message, table, guest)
 
     elif command == 'cm': #ОСТАВИТЬ КОММЕНТАРИЙ К БЛЮДУ
         conn = sqlite3.connect('DNK.db')
@@ -570,7 +573,7 @@ def callback_message(callback):
 
             return markup
         def write_comment(message, name, table, guest):
-            bot.send_message(message.chat.id, 'Напиши комменатрий к {name} гостю {guest} за столом {table}', reply_markup=make_markup_for_comment())
+            bot.send_message(message.chat.id, f'Напиши комменатрий к {name} гостю {guest} за столом {table}', reply_markup=make_markup_for_comment())
             bot.register_next_step_handler(message, correct_comment, name, table, guest)
         def correct_comment(message, name, table, guest):
             text = message.text
