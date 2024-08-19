@@ -471,7 +471,7 @@ def callback_message(callback):
         is_draft = True
         name = name[2:]
 
-    command, table, guest = callback.data.split('_')
+    command, table, guest, *index = callback.data.split('_')
 
     if command == 'a': #ДОБАВИТЬ ЕДИНИЦУ ТОВАРА
         conn = sqlite3.connect('DNK.db')
@@ -551,28 +551,75 @@ def callback_message(callback):
         cur.close()
         conn.close()
 
+    elif command == 'dc':
+        conn = sqlite3.connect('DNK.db')
+        cur = conn.cursor()
+        index = int(index[0])
+
+        cur.execute(f''' SELECT json_draft FROM waiters where id_chat = '{callback.message.chat.id}' ''')
+        draft = json.loads(cur.fetchall()[0][0])
+
+        name = draft['last_good_for_comment']
+
+        cur.execute(f''' SELECT is_varitive FROM goods WHERE name = '{name}' ''')
+        is_varitive = cur.fetchall()[0][0]
+        
+        if is_varitive:
+            name = name + '_' + callback.message.text.split('\n')[1]
+        
+        comments = draft['order'][table][guest][name]['comment'].split('\n')
+        del comments[index]
+        draft['order'][table][guest][name]['comment'] = '\n'.join(comments)
+
+        bot.delete_message(callback.message.chat.id, callback.message.message_id)
+
+        cur.execute(f''' UPDATE waiters SET json_draft = '{json.dumps(draft, ensure_ascii=False)}' where id_chat = '{callback.message.chat.id}'  ''')
+        conn.commit()
+
+        cur.close()
+        conn.close()
+
     elif command == 'cm': #ОСТАВИТЬ КОММЕНТАРИЙ К БЛЮДУ
         conn = sqlite3.connect('DNK.db')
         cur = conn.cursor()
 
         cur.execute(f''' SELECT is_varitive FROM goods WHERE name = '{name}' ''')
         is_varitive = cur.fetchall()[0][0]
+        
+        if is_varitive:
+            name = name + '_' + callback.message.text.split('\n')[1]
+            comments = callback.message.text.split('\n')[2:]
+            start = 1
+        else:
+            comments = callback.message.text.split('\n')[1:]
+            start = 0
+
+        cur.execute(f''' SELECT json_draft from waiters where id_chat = '{callback.message.chat.id}' ''')
+        draft = json.loads(cur.fetchall()[0][0])
+
+        draft['last_good_for_comment'] = name
+
+        cur.execute(f''' UPDATE waiters SET json_draft = '{json.dumps(draft, ensure_ascii=False)}' WHERE id_chat = '{callback.message.chat.id}' ''')
+        conn.commit()
 
         cur.close()
         conn.close()
-        
-        if is_varitive:
-            name = name + callback.message.text.split('\n')[1]
 
         def make_markup_for_comment():
             markup = types.ReplyKeyboardMarkup()
-
             btn_cancel = types.KeyboardButton('Отмена')
-
             markup.row(btn_cancel)
 
             return markup
-        def write_comment(message, name, table, guest):
+        def make_inline_markup_for_comment(index):
+            markup = types.InlineKeyboardMarkup()
+            btn_delete = types.InlineKeyboardButton('Удалить', callback_data=f'dc_{table}_{guest}_{index}')
+            markup.row(btn_delete)
+
+            return markup
+        def write_comment(message, name, table, guest, comments, start):
+            for index, comment in enumerate(comments, start):
+                bot.send_message(message.chat.id, comment, reply_markup=make_inline_markup_for_comment(index))
             bot.send_message(message.chat.id, f'Напиши комменатрий к {name} гостю {guest} за столом {table}', reply_markup=make_markup_for_comment())
             bot.register_next_step_handler(message, correct_comment, name, table, guest)
         def correct_comment(message, name, table, guest):
@@ -582,22 +629,21 @@ def callback_message(callback):
                 conn = sqlite3.connect('DNK.db')
                 cur = conn.cursor()
 
-                cur.execute(f''' SELECT json_draft FROM waiters where id_chat = {message.chat.id} ''')
+                cur.execute(f''' SELECT json_draft FROM waiters where id_chat = '{message.chat.id}' ''')
                 draft = json.loads(cur.fetchall()[0][0])
                 
-                draft['order'][table][guest][name]['comment'] += f'\n{text}'
+                good_in_order = draft['order'][table][guest][name]
+                good_in_order['comment'] += ("\n" + text if good_in_order["comment"] else text)
 
-                cur.execute(f''' UPDATE waiters SET json_draft = '{json.dumps(draft, ensure_ascii=False)}' where id_chat = {message.chat.id}  ''')
+                cur.execute(f''' UPDATE waiters SET json_draft = '{json.dumps(draft, ensure_ascii=False)}' where id_chat = '{message.chat.id}'  ''')
                 conn.commit()
 
                 cur.close()
                 conn.close()
 
                 display_order(message, table, guest)
-            else:
-                chose_category_menu(message, table, guest)
         
-        write_comment(callback.message, name, table, guest)
+        write_comment(callback.message, name, table, guest, comments, start)
 
     elif command == 'c': #ВЫВЕСТИ СОСТАВ БЛЮДА
         conn = sqlite3.connect('DNK.db')
