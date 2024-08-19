@@ -657,8 +657,6 @@ def callback_message(callback):
         cur.close()
         conn.close()
 
-        chose_guest(callback.message, table)
-
     elif command == 't':
         chose_guest(callback.message, table)
 
