@@ -703,7 +703,7 @@ def callback_message(callback):
         conn.close()
 
         if is_draft:
-            bot.edit_message_text(f"{'🔄 ' if is_draft else ''}{name.split('_')[0]}, {draft['order'][table][guest][name]['quantity']} шт\n{draft['order'][table][guest][name]['comment']}", 
+            bot.edit_message_text(f"{'🔄 ' if is_draft else ''}<b>{name.split('_')[0]}</b>, {draft['order'][table][guest][name]['quantity']} шт\n<i>{draft['order'][table][guest][name]['comment']}</i>", 
                                 chat_id, callback.message.message_id, 
                                 reply_markup=make_buttons_for_good(True, table, guest), parse_mode='HTML')
         else:
@@ -729,7 +729,7 @@ def callback_message(callback):
             bot.delete_message(chat_id, callback.message.message_id)
         else:
             draft['order'][table][guest][name]['quantity'] -= 1
-            bot.edit_message_text(f"{'🔄 ' if is_draft else ''}{name.split('_')[0]}, {draft['order'][table][guest][name]['quantity']} шт\n{draft['order'][table][guest][name]['comment']}", 
+            bot.edit_message_text(f"{'🔄 ' if is_draft else ''}<b>{name.split('_')[0]}</b>, {draft['order'][table][guest][name]['quantity']} шт\n<i>{draft['order'][table][guest][name]['comment']}</i>", 
                         chat_id, callback.message.message_id, 
                         reply_markup=make_buttons_for_good(True, table, guest), parse_mode='HTML')
 
