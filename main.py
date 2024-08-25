@@ -5,7 +5,7 @@ import json
 
 bot = telebot.TeleBot('6554881247:AAE0GVjHxGdwjwmCWeDYkhT_r-EweXhhtgU')
 
-# ВЫПОЛНЕНИЕ КОМАНДЫ
+# ЗАПУСК БОТА
 @bot.message_handler(commands=['start'])
 def start(message: telebot.types.Message):
     return chose_table(message.chat.id)
@@ -19,17 +19,27 @@ def make_markup_tables(chat_id:int):
     cur.execute(f''' SELECT active_tables, id_chat FROM waiters ''')
     tables_and_id_chats = {id_chat : (active_table.split(', ') if active_table else []) for active_table, id_chat in cur.fetchall()}
 
+    cur.execute(f''' SELECT json_draft FROM waiters WHERE id_chat = '{chat_id}' ''')
+    draft = cur.fetchall()[0][0]
+    if draft:
+        draft = json.loads(draft)
+        client_draft_tables = set(draft['order'])
+    else:
+        client_draft_tables = set()
+
     cur.close()
     conn.close()
 
-    client_tables = set(tables_and_id_chats[chat_id])
+    client_active_tables = set(tables_and_id_chats[chat_id])
     active_tables = set()
     for tables in tables_and_id_chats.values():
         active_tables.update(tables)
-    active_tables = active_tables - client_tables
+    active_tables = active_tables - client_active_tables
 
     def is_active_table(table):
-        if table in client_tables:
+        if table in client_draft_tables:
+            return f'{table} 🔄'
+        if table in client_active_tables:
             return f'{table} 🟩'
         elif table in active_tables:
             return f'{table} 🟦'
@@ -68,7 +78,7 @@ def chose_table(chat_id:int):
 def correct_table(message:telebot.types.Message):
     text = message.text.split()[0]
 
-    if text.isdigit() and 0 < int(text) < 17:
+    if text.isdigit() and 0 < int(text) < 17: #пока написано для конкретного ресторана с фиксированным количество столов
         number_of_table = text
         return chose_guest(message.chat.id, number_of_table)
     else:
@@ -87,8 +97,7 @@ def make_markup_guests(chat_id:int, number_of_table:int):
 
     if draft:
         draft = json.loads(draft)
-        draft['order'] = draft.get('order', {})
-        draft['order'][number_of_table] = draft['order'].get(number_of_table, {})
+        draft.setdefault('order', {}).setdefault(number_of_table, {})
         if draft['order'][number_of_table]:
             is_draft = True
         else:
