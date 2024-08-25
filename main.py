@@ -224,12 +224,15 @@ def place_order(chat_id:int, number_of_table:int, is_bill:bool=False):
     id_waiter, active_tables, draft = cur.fetchall()[0]
     draft = json.loads(draft)
 
-    if active_tables:
-        active_tables = active_tables.split(', ')
-    else:
-        active_tables = []
+    if not number_of_table in draft['order']:
+        bot.send_message(chat_id, 'Ничего не заказано')
+        return chose_guest(chat_id, number_of_table)
+
+    active_tables = active_tables.split(', ')
+
     if not number_of_table in active_tables:
         active_tables.append(number_of_table)
+    
     active_tables = ', '.join(active_tables)
     cur.execute(f''' UPDATE waiters SET active_tables = '{active_tables}' WHERE id_waiter = '{id_waiter}' ''')
     conn.commit()
