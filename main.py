@@ -723,6 +723,10 @@ def callback_message(callback:telebot.types.CallbackQuery):
         if draft['order'][table][guest][name]['quantity'] == 1:
             del draft['order'][table][guest][name]
             bot.delete_message(chat_id, callback.message.message_id)
+            if not draft['order'][table][guest]:
+                del draft['order'][table][guest]
+                if not draft['order'][table]:
+                    del draft['order'][table]
         else:
             draft['order'][table][guest][name]['quantity'] -= 1
             bot.edit_message_text(f"{'🔄 ' if is_draft else ''}<b>{name.split('_')[0]}</b>, {draft['order'][table][guest][name]['quantity']} шт\n<i>{draft['order'][table][guest][name]['comment']}</i>", 
@@ -750,6 +754,11 @@ def callback_message(callback:telebot.types.CallbackQuery):
             name = name + '_' + callback.message.text.split('\n')[1]
         
         del draft['order'][table][guest][name]
+        if not draft['order'][table][guest]:
+                del draft['order'][table][guest]
+                if not draft['order'][table]:
+                    del draft['order'][table]
+
         bot.delete_message(chat_id, callback.message.message_id)
 
         cur.execute(f''' UPDATE waiters SET json_draft = '{json.dumps(draft, ensure_ascii=False)}' where id_chat = {chat_id}  ''')
