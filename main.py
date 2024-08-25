@@ -12,12 +12,19 @@ def start(message: telebot.types.Message):
 
 
 #Создание шаблона кнопок столов зала
-def make_markup_tables(chat_id:int):
+#Пока что функция написана для фиксированных данных конкретного ресторана
+def make_markup_tables(chat_id:int): 
     conn = sqlite3.connect('DNK.db')
     cur = conn.cursor()
 
     cur.execute(f''' SELECT active_tables, id_chat FROM waiters ''')
     tables_and_id_chats = {id_chat : (active_table.split(', ') if active_table else []) for active_table, id_chat in cur.fetchall()}
+
+    client_active_tables = set(tables_and_id_chats[chat_id])
+    active_tables = set()
+    for tables in tables_and_id_chats.values():
+        active_tables.update(tables)
+    active_tables = active_tables - client_active_tables
 
     cur.execute(f''' SELECT json_draft FROM waiters WHERE id_chat = '{chat_id}' ''')
     draft = cur.fetchall()[0][0]
@@ -29,12 +36,6 @@ def make_markup_tables(chat_id:int):
 
     cur.close()
     conn.close()
-
-    client_active_tables = set(tables_and_id_chats[chat_id])
-    active_tables = set()
-    for tables in tables_and_id_chats.values():
-        active_tables.update(tables)
-    active_tables = active_tables - client_active_tables
 
     def is_active_table(table):
         if table in client_draft_tables:
@@ -75,16 +76,18 @@ def chose_table(chat_id:int):
     bot.send_message(chat_id, 'Выбери стол', reply_markup=make_markup_tables(chat_id))
     bot.register_next_step_handler_by_chat_id(chat_id, correct_table)
 #Обработка выбранной кнопки
+#Пока что функция написана для фиксированных данных конкретного ресторана
 def correct_table(message:telebot.types.Message):
     text = message.text.split()[0]
 
-    if text.isdigit() and 0 < int(text) < 17: #пока написано для конкретного ресторана с фиксированным количество столов
+    if text.isdigit() and 0 < int(text) < 17:
         number_of_table = text
         return chose_guest(message.chat.id, number_of_table)
     else:
         return chose_table(message.chat.id)
 
 #Создание шаблона кнопок гостей за столом
+#Пока что функция написана для фиксированных данных конкретного ресторана
 def make_markup_guests(chat_id:int, number_of_table:int):
     conn = sqlite3.connect('DNK.db')
     cur = conn.cursor()
@@ -382,6 +385,7 @@ def bill(chat_id:int, number_of_table:int):
     return payment_method(chat_id, number_of_table)
 
 #Создание шаблона кнопок меню
+#Пока что функция написана для фиксированных данных конкретного ресторана
 def make_markup_order():
     markup = types.ReplyKeyboardMarkup()
 
@@ -407,6 +411,7 @@ def chose_order(chat_id:int, number_of_table:int, number_of_guest:int):
     bot.send_message(chat_id, 'Выбери раздел', reply_markup=make_markup_order())
     bot.register_next_step_handler_by_chat_id(chat_id, correct_order, number_of_table, number_of_guest)
 #Обработка выбранной кнопки
+#Пока что функция написана для фиксированных данных конкретного ресторана
 def correct_order(message:telebot.types.Message, number_of_table:int, number_of_guest:int):
     text = message.text
 
@@ -421,6 +426,7 @@ def correct_order(message:telebot.types.Message, number_of_table:int, number_of_
         return chose_order(message.chat.id, number_of_table, number_of_guest)
 
 #Создание шаблона кнопок категорий меню
+#Пока что функция написана для фиксированных данных конкретного ресторана
 def make_markup_categories():
     markup = types.ReplyKeyboardMarkup()
 
@@ -450,6 +456,7 @@ def chose_category_menu(chat_id:int, number_of_table:int, number_of_guest:int):
     bot.send_message(chat_id, 'Выбери категорию', reply_markup=make_markup_categories())
     bot.register_next_step_handler_by_chat_id(chat_id, correct_category_menu, number_of_table, number_of_guest)
 #Обработка выбранной кнопки
+#Пока что функция написана для фиксированных данных конкретного ресторана
 def correct_category_menu(message:telebot.types.Message, number_of_table:int, number_of_guest:int):
     text = message.text
 
@@ -606,9 +613,6 @@ def correct_goods(message:telebot.types.Message, number_of_table:int, number_of_
 
     if text == 'Зал':
         return chose_table(message.chat.id)
-    elif text == 'Мои столы':
-        bot.send_message(message.chat.id, 'Здесь будут написаны твои столы')
-        return chose_order(message.chat.id, number_of_table, number_of_guest)
     elif text == f'Гость {number_of_guest}':
         return chose_order(message.chat.id, number_of_table, number_of_guest)
     elif text == 'Гости':
