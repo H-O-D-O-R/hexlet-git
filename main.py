@@ -7,12 +7,12 @@ bot = telebot.TeleBot('6554881247:AAE0GVjHxGdwjwmCWeDYkhT_r-EweXhhtgU')
 
 # ВЫПОЛНЕНИЕ КОМАНДЫ
 @bot.message_handler(commands=['start'])
-def start(message):
+def start(message: telebot.types.Message):
     return chose_table(message.chat.id)
 
 
 #Создание шаблона кнопок столов зала
-def make_markup_tables(chat_id):
+def make_markup_tables(chat_id:int):
     conn = sqlite3.connect('DNK.db')
     cur = conn.cursor()
 
@@ -61,11 +61,11 @@ def make_markup_tables(chat_id):
 
     return markup
 #Выбор стола пользователем
-def chose_table(chat_id):
+def chose_table(chat_id:int):
     bot.send_message(chat_id, 'Выбери стол', reply_markup=make_markup_tables(chat_id))
     bot.register_next_step_handler_by_chat_id(chat_id, correct_table)
 #Обработка выбранной кнопки
-def correct_table(message):
+def correct_table(message:telebot.types.Message):
     text = message.text.split()[0]
 
     if text.isdigit() and 0 < int(text) < 17:
@@ -75,7 +75,7 @@ def correct_table(message):
         return chose_table(message.chat.id)
 
 #Создание шаблона кнопок гостей за столом
-def make_markup_guests(chat_id, number_of_table):
+def make_markup_guests(chat_id:int, number_of_table:int):
     conn = sqlite3.connect('DNK.db')
     cur = conn.cursor()
 
@@ -180,16 +180,15 @@ def make_markup_guests(chat_id, number_of_table):
     
     return markup
 #Выбор гостя пользователем
-def chose_guest(chat_id, number_of_table):
+def chose_guest(chat_id:int, number_of_table:int):
     bot.send_message(chat_id, 'Выбери гостя', reply_markup=make_markup_guests(chat_id, number_of_table))
     bot.register_next_step_handler_by_chat_id(chat_id, correct_guest, number_of_table)
 #Обработка выбранной кнопки
-def correct_guest(message, number_of_table):
+def correct_guest(message: telebot.types.Message, number_of_table:int):
     text = message.text
 
     if text.isdigit():
         number_of_guest = text
-        # bot.send_message(message.chat.id, f'Вы выбрали гостя № {number_of_guest}')
         return chose_order(message.chat.id, number_of_table, number_of_guest)
     elif text == 'Зал':
         return chose_table(message.chat.id)
@@ -205,7 +204,7 @@ def correct_guest(message, number_of_table):
 
 
 #Заказать
-def place_order(chat_id, number_of_table, is_bill=False):
+def place_order(chat_id:int, number_of_table:int, is_bill:bool=False):
     conn = sqlite3.connect('DNK.db')
     cur = conn.cursor()
 
@@ -298,11 +297,11 @@ def make_markup_payment_method():
 
     return markup
 #Способ оплаты
-def payment_method(chat_id, number_of_table):
+def payment_method(chat_id:int, number_of_table:int):
     bot.send_message(chat_id, 'Выбери способ оплаты', reply_markup=make_markup_payment_method())
     bot.register_next_step_handler_by_chat_id(chat_id, correct_payment_method, number_of_table)
 #Обработка выбранной кнопки
-def correct_payment_method(message, number_of_table):
+def correct_payment_method(message:telebot.types.Message, number_of_table:int):
     text = message.text
 
     if text == 'Карта' or text == 'Наличка':
@@ -330,7 +329,7 @@ def correct_payment_method(message, number_of_table):
         return payment_method(message.chat.id)
 
 #Счёт
-def bill(chat_id, number_of_table):
+def bill(chat_id:int, number_of_table:int):
     conn = sqlite3.connect('DNK.db')
     cur = conn.cursor()
 
@@ -395,11 +394,11 @@ def make_markup_order():
 
     return markup
 #Выбор меню пользователем
-def chose_order(chat_id, number_of_table, number_of_guest):
+def chose_order(chat_id:int, number_of_table:int, number_of_guest:int):
     bot.send_message(chat_id, 'Выбери раздел', reply_markup=make_markup_order())
     bot.register_next_step_handler_by_chat_id(chat_id, correct_order, number_of_table, number_of_guest)
 #Обработка выбранной кнопки
-def correct_order(message, number_of_table, number_of_guest):
+def correct_order(message:telebot.types.Message, number_of_table:int, number_of_guest:int):
     text = message.text
 
     if text == 'Меню':
@@ -438,11 +437,11 @@ def make_markup_categories():
 
     return markup
 #Выбор категории меню пользователем
-def chose_category_menu(chat_id, number_of_table, number_of_guest):
+def chose_category_menu(chat_id:int, number_of_table:int, number_of_guest:int):
     bot.send_message(chat_id, 'Выбери категорию', reply_markup=make_markup_categories())
     bot.register_next_step_handler_by_chat_id(chat_id, correct_category_menu, number_of_table, number_of_guest)
 #Обработка выбранной кнопки
-def correct_category_menu(message, number_of_table, number_of_guest):
+def correct_category_menu(message:telebot.types.Message, number_of_table:int, number_of_guest:int):
     text = message.text
 
     if text in ["Завтраки", "Закуски", "Салаты", "Супы", "Горячее", "Паста", "Стейк", "Десерты", "Пицца"]:
@@ -458,7 +457,7 @@ def correct_category_menu(message, number_of_table, number_of_guest):
         return chose_order(message.chat.id, number_of_table, number_of_guest)
 
 #ДОБАВИТЬ ТОВАР В ЗАКАЗ
-def add_good_to_order(chat_id, number_of_table, number_of_guest, good, variant=''):
+def add_good_to_order(chat_id:int, number_of_table:int, number_of_guest:int, good:tuple, variant:str=''):
     conn = sqlite3.connect('DNK.db')
     cur = conn.cursor()
 
@@ -492,7 +491,7 @@ def add_good_to_order(chat_id, number_of_table, number_of_guest, good, variant='
     display_order(chat_id, number_of_table, number_of_guest)
 
 #Вывод заказа стола
-def display_order(chat_id, number_of_table, number_of_guest=None):
+def display_order(chat_id:int, number_of_table:int, number_of_guest:int=None):
     conn = sqlite3.connect('DNK.db')
     cur = conn.cursor()
     
@@ -539,7 +538,7 @@ def display_order(chat_id, number_of_table, number_of_guest=None):
     conn.close()
 
 #Создание шаблона кнопок для товаров заказа
-def make_buttons_for_good(is_draft, number_of_table, guest):
+def make_buttons_for_good(is_draft:bool, number_of_table:int, guest:int):
     markup = types.InlineKeyboardMarkup()
 
     btn_add = types.InlineKeyboardButton('➕', callback_data=f"a_{number_of_table}_{guest}")    
@@ -558,7 +557,7 @@ def make_buttons_for_good(is_draft, number_of_table, guest):
     return markup
 
 #Созданиие шаблона товаров выбранной категории
-def make_markup_goods(categories, number_of_guest):
+def make_markup_goods(categories:str, number_of_guest:int):
     markup = types.ReplyKeyboardMarkup()
 
     conn = sqlite3.connect('DNK.db')
@@ -589,11 +588,11 @@ def make_markup_goods(categories, number_of_guest):
 
     return markup
 #Выбор блюд выбранной категории
-def chose_goods(chat_id, number_of_table, number_of_guest, categories):
+def chose_goods(chat_id:int, number_of_table:int, number_of_guest:int, categories:str):
     bot.send_message(chat_id, 'Выбери товар', reply_markup=make_markup_goods(categories, number_of_guest))
     bot.register_next_step_handler_by_chat_id(chat_id, correct_goods, number_of_table, number_of_guest, categories)
 #Обработка выбранной кнопки
-def correct_goods(message, number_of_table, number_of_guest, categories):
+def correct_goods(message:telebot.types.Message, number_of_table:int, number_of_guest:int, categories:str):
     text = message.text
 
     if text == 'Зал':
@@ -617,18 +616,16 @@ def correct_goods(message, number_of_table, number_of_guest, categories):
         
         if good:
             good = good[0]
-            # bot.send_message(message.chat.id, f'Товар найден\n{good}')
             if int(good[7]):
                 return chose_variative_good(message.chat.id, number_of_table, number_of_guest, good)
             else:
                 add_good_to_order(message.chat.id, number_of_table, number_of_guest, good) 
                 return chose_goods(message.chat.id, number_of_table, number_of_guest, categories)
         else:
-            # bot.send_message(message.chat.id, f'Товар не найден')
             return chose_order(message.chat.id, number_of_table, number_of_guest)
 
 #Создание шаблона вариативных товаров
-def make_markup_variative_goods(good):
+def make_markup_variative_goods(good:tuple):
     markup = types.ReplyKeyboardMarkup()
 
     btns = [[]]
@@ -644,30 +641,22 @@ def make_markup_variative_goods(good):
 
     return markup         
 #Выбор вариативных блюд
-def chose_variative_good(chat_id, number_of_table, number_of_guest, good):
+def chose_variative_good(chat_id:int, number_of_table:int, number_of_guest:int, good:tuple):
     bot.send_message(chat_id, 'Выбери вариацию', reply_markup=make_markup_variative_goods(good))
     bot.register_next_step_handler_by_chat_id(chat_id, correct_variative_good, number_of_table, number_of_guest, good)
 #Обработка выбранной кнопки
-def correct_variative_good(message, number_of_table, number_of_guest, good):
+def correct_variative_good(message:telebot.types.Message, number_of_table:int, number_of_guest:int, good:tuple):
     text = message.text
 
     if text in good[8].split(', '):
         add_good_to_order(message.chat.id, number_of_table, number_of_guest, good, text)
-    # elif text != 'Назад':
-    #     pass
-    #     bot.send_message(message.chat.id, 'вариация не найдена')
     
     return chose_goods(message.chat.id, number_of_table, number_of_guest, good[2])
 
 
-#ПОЛУЧЕНИЕ ФОТО
-# @bot.message_handler(content_types=['photo'])
-# def set_photo(message):
-#     bot.send_message(message.chat.id, 'Фото установлено!')
-
 #СОЗДАНИИЕ ФУНКЦИИ ДЛЯ КНОПОК
 @bot.callback_query_handler(func=lambda callback: True)
-def callback_message(callback):
+def callback_message(callback:telebot.types.CallbackQuery):
     name = callback.message.text.split(',')[0]
     chat_id = callback.message.chat.id
 
@@ -709,8 +698,6 @@ def callback_message(callback):
         else:
             display_order(chat_id, table, guest)
         
-        # chose_category_menu(callback.message, table, guest)
-
     elif command == 'r': #УБРАТЬ ЕДИНИЦУ ТОВАРА
         conn = sqlite3.connect('DNK.db')
         cur = conn.cursor()
@@ -816,18 +803,18 @@ def callback_message(callback):
             markup.row(btn_cancel)
 
             return markup
-        def make_inline_markup_for_comment(index):
+        def make_inline_markup_for_comment(index:int):
             markup = types.InlineKeyboardMarkup()
             btn_delete = types.InlineKeyboardButton('Удалить', callback_data=f'dc_{table}_{guest}_{index}')
             markup.row(btn_delete)
 
             return markup
-        def write_comment(chat_id, name, table, guest, comments, start):
+        def write_comment(chat_id:int, name:str, table:int, guest:int, comments:str, start:int):
             for index, comment in enumerate(comments, start):
                 bot.send_message(chat_id, f'<i>{comment}</i>', reply_markup=make_inline_markup_for_comment(index), parse_mode='HTML')
             bot.send_message(chat_id, f"Напиши комменатрий к {name.split('_')[0]}", reply_markup=make_markup_for_comment())
             bot.register_next_step_handler_by_chat_id(chat_id, correct_comment, name, table, guest)
-        def correct_comment(message, name, table, guest):
+        def correct_comment(message:telebot.types.Message, name:str, table:int, guest:int):
             text = message.text
 
             if text != 'Отмена':
