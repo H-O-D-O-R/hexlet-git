@@ -2,6 +2,7 @@ import telebot
 from telebot import types
 import sqlite3
 import json
+import re
 
 bot = telebot.TeleBot('6554881247:AAE0GVjHxGdwjwmCWeDYkhT_r-EweXhhtgU')
 
@@ -391,13 +392,13 @@ def bill(chat_id:int, number_of_table:int):
 
 #УНИВЕРСАЛЬНАЯ ФУНКЦИЯ ДЛЯ ВЫВОДА РАЗДЕЛОВ И ТОВАРОВ
 #Создание шаблона кнопок меню
-def make_markup_order(names:list, number_of_guest:int, is_guests_button, is_guest_button, is_draft, is_active):
+def make_markup_order(names:list, number_of_guest:int, is_last:int, is_guests_button, is_guest_button, is_draft, is_active):
     markup = types.ReplyKeyboardMarkup()
 
     btns = [[]]
     for name in names:
         if len(btns[-1]) == 2:
-            btns.append([])    
+            btns.append([])
         btns[-1].append( types.KeyboardButton( name ) )
     
     service_buttons = []
@@ -432,9 +433,19 @@ def chose_order(chat_id:int, number_of_table:int, number_of_guest:int, categorie
     category = ' '.join(categories).lstrip()
 
     if is_last:
-        cur.execute(f''' SELECT name, is_varitive, varities FROM goods WHERE category = '{category}' ''')
-        data_for_correct = { name: {'is_varitive': is_varitive, 'varities': varities}  for name, is_varitive, varities in cur.fetchall()}
-        list_for_markup = list(data_for_correct.keys())
+        cur.execute(f''' SELECT name, is_limit, limit_cnt, is_varitive, varities FROM goods WHERE category = '{category}' ''')
+        data_for_correct = {}
+        list_for_markup = []
+
+        for name, is_limit, limit_cnt, is_varitive, varities in cur.fetchall():
+            data_for_correct[name] = {'is_varitive': is_varitive, 'varities': varities}
+
+            if is_limit:
+                if limit_cnt == 0:
+                    name = f'⛔️{name}'
+                else:
+                    name = f'❗️ {str(limit_cnt)} {name}'
+            list_for_markup.append(name)
     else:
         cur.execute(f''' SELECT name FROM navigation WHERE categories = '{category}' ''')
         list_for_markup = [item[0] for item in cur.fetchall()]
@@ -455,14 +466,33 @@ def chose_order(chat_id:int, number_of_table:int, number_of_guest:int, categorie
     cur.close()
     conn.close()
 
-    bot.send_message(chat_id, 'Выбери раздел', reply_markup=make_markup_order(list_for_markup, number_of_guest, is_guests_button, is_guest_button, is_draft, is_active))
+    bot.send_message(chat_id, f'Выбери {"товар" if is_last else "раздел"}', reply_markup=make_markup_order(list_for_markup, number_of_guest, is_last, is_guests_button, is_guest_button, is_draft, is_active))
     bot.register_next_step_handler_by_chat_id(chat_id, correct_order, number_of_table, number_of_guest, data_for_correct, categories, is_last)
 #Обработка выбранной кнопки
 def correct_order(message:telebot.types.Message, number_of_table:int, number_of_guest:int, data:dict|list, categories:list, is_last:int):
     text = message.text
 
+    limit = 0
+    if ord(text[0]) == 9940:
+        bot.send_message(message.chat.id, 'Товар находится в стоп-листе')
+        return chose_order(message.chat.id, number_of_table, number_of_guest, categories, is_last)
+    elif ord(text[0]) == 10071:
+        text = text.split()
+        limit = int(text[1])
+        text = ' '.join(text[2:])
+    
     if text in data:
         if is_last:
+            if limit:
+                conn = sqlite3.connect('DNK.db')
+                cur = conn.cursor()
+
+                cur.execute(f''' UPDATE goods SET limit_cnt = '{limit - 1}' WHERE name = '{text}' ''')
+                conn.commit()
+
+                cur.close()
+                conn.close()
+
             good = {'name': text, **data[text]}
             if good['is_varitive']:
                 return chose_variative_good(message.chat.id, number_of_table, number_of_guest, good, categories, is_last)
@@ -715,8 +745,15 @@ def callback_message(callback:telebot.types.CallbackQuery):
         conn = sqlite3.connect('DNK.db')
         cur = conn.cursor()
 
-        cur.execute(f''' SELECT is_varitive FROM goods WHERE name = '{name}' ''')
-        is_varitive = cur.fetchall()[0][0]
+        cur.execute(f''' SELECT is_varitive, is_limit, limit_cnt FROM goods WHERE name = '{name}' ''')
+        is_varitive, is_limit, limit_cnt = cur.fetchall()[0]
+        if is_limit:
+            if limit_cnt == 0:
+                bot.send_message(callback.message.chat.id, 'Товар находится в стоп-листе')
+                return None
+            
+            cur.execute(f''' UPDATE goods SET limit_cnt = '{limit_cnt - 1}' WHERE name = '{name}' ''')
+            conn.commit()            
                 
         if is_varitive:
             name = name + '_' + callback.message.text.split('\n')[1]
@@ -746,11 +783,15 @@ def callback_message(callback:telebot.types.CallbackQuery):
         conn = sqlite3.connect('DNK.db')
         cur = conn.cursor()
 
+        cur.execute(f''' SELECT is_limit, limit_cnt, is_varitive FROM goods WHERE name = '{name}' ''')
+        is_limit, limit_cnt, is_varitive = cur.fetchall()[0]
+
+        if is_limit:
+            cur.execute(f''' UPDATE goods SET limit_cnt = '{limit_cnt + 1}' WHERE name = '{name}' ''')
+            conn.commit()
+
         cur.execute(f''' SELECT json_draft FROM waiters where id_chat = {chat_id} ''')
         draft = json.loads(cur.fetchall()[0][0])
-
-        cur.execute(f''' SELECT is_varitive FROM goods WHERE name = '{name}' ''')
-        is_varitive = cur.fetchall()[0][0]
         
         if is_varitive:
             name = name + '_' + callback.message.text.split('\n')[1]
@@ -779,11 +820,16 @@ def callback_message(callback:telebot.types.CallbackQuery):
         conn = sqlite3.connect('DNK.db')
         cur = conn.cursor()
 
+        cur.execute(f''' SELECT is_limit, limit_cnt, is_varitive FROM goods WHERE name = '{name}' ''')
+        is_limit, limit_cnt, is_varitive = cur.fetchall()[0]
+
+        if is_limit:
+            cnt = int(re.search(', (\d+) шт', callback.message.text).group(1))
+            cur.execute(f''' UPDATE goods SET limit_cnt = '{limit_cnt + cnt}' WHERE name = '{name}' ''')
+            conn.commit()
+
         cur.execute(f''' SELECT json_draft FROM waiters where id_chat = {chat_id} ''')
         draft = json.loads(cur.fetchall()[0][0])
-
-        cur.execute(f''' SELECT is_varitive FROM goods WHERE name = '{name}' ''')
-        is_varitive = cur.fetchall()[0][0]
         
         if is_varitive:
             name = name + '_' + callback.message.text.split('\n')[1]
