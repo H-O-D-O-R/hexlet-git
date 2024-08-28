@@ -112,7 +112,7 @@ def make_markup_guests(chat_id:int, number_of_table:int):
     btn_order = types.KeyboardButton('Заказ')
 
     if is_draft:
-        btn_place_order_or_bill = types.KeyboardButton('Заказать')
+        btn_place_order_or_bill = types.KeyboardButton('Печать')
     elif is_active:
         btn_place_order_or_bill = types.KeyboardButton('Счет')
     else:
@@ -159,7 +159,7 @@ def correct_guest(message: telebot.types.Message, number_of_table:int):
     elif text == 'Заказ':
         display_order(message.chat.id, number_of_table)
         return chose_guest(message.chat.id, number_of_table)
-    elif text == 'Заказать':
+    elif text == 'Печать':
         return place_order(message.chat.id, number_of_table)
     elif text == 'Счет':
         bill(message.chat.id, number_of_table)
@@ -167,7 +167,7 @@ def correct_guest(message: telebot.types.Message, number_of_table:int):
         return chose_guest(message.chat.id, number_of_table)
 
 
-#Заказать
+#Печать
 def place_order(chat_id:int, number_of_table:int, is_bill:bool=False):
     conn = sqlite3.connect('DNK.db')
     cur = conn.cursor()
@@ -359,7 +359,7 @@ def make_markup_order(names:list, number_of_guest:int, is_last:int, is_guests_bu
     service_buttons.append('Зал')
     service_buttons.append('Заказ')
     if is_draft:
-        service_buttons.append('Заказать')
+        service_buttons.append('Печать')
     elif is_active:
         service_buttons.append('Счёт')
     service_buttons.append('Назад')
@@ -475,7 +475,7 @@ def correct_order(message:telebot.types.Message, number_of_table:int, number_of_
     elif text == 'Заказ':
         display_order(message.chat.id, number_of_table, number_of_guest)
         return chose_order(message.chat.id, number_of_table, number_of_guest, categories, is_last)
-    elif text == 'Заказать':
+    elif text == 'Печать':
         return place_order(message.chat.id, number_of_table)
     elif text == 'Счёт':
         return bill(message.chat.id, number_of_table)
