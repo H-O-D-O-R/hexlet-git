@@ -229,7 +229,7 @@ def place_order(chat_id:int, number_of_table:int, is_bill:bool=False):
         bot.send_message(chat_id, 'Ничего не заказано')
         return chose_guest(chat_id, number_of_table)
 
-    active_tables = active_tables.split(', ')
+    active_tables = (active_tables.split(', ') if active_tables else [])
 
     if not number_of_table in active_tables:
         active_tables.append(number_of_table)
